@@ -1,21 +1,17 @@
-name: Build for ImmortalWrt SNAPSHOT (Kernel 6.18.26)
-
+name: Build OpenWrt APK Package
 on:
   workflow_dispatch:
-
 jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: openwrt/gh-action-sdk:v7
+      image: ghcr.io/openwrt/gh-action-sdk:v7  # 改动处：替换为正确的镜像地址
       options: --user root
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Build Package
-        id: compile
+    - name: Checkout code
+      uses: actions/checkout@v4
+    - name: Build Package
+      id: compile
         run: |
           # ========== 关键配置区域 ==========
           # 1. 设置 CPU 架构（请按需修改）
