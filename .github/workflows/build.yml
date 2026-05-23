@@ -1,67 +1,71 @@
 name: Build OpenWrt APK Package
+
 on:
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/openwrt/gh-action-sdk:v7  # 改动处：替换为正确的镜像地址
+      image: ghcr.io/openwrt/gh-action-sdk:v7
       options: --user root
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
     - name: Build Package
       id: compile
-        run: |
-          # ========== 关键配置区域 ==========
-          # 1. 设置 CPU 架构（请按需修改）
-          TARGET_ARCH="aarch64_cortex-a53"
-          # 2. 设置 ImmortalWrt 版本（使用 SNAPSHOT）
-          OPENWRT_VERSION="SNAPSHOT"
-          # 3. 定义目标平台
-          TARGET="armsr/armv8"
-          # =================================
+      run: |
+        # ========== 关键配置区域 ==========
+        # 1. 设置 CPU 架构（请按需修改）
+        TARGET_ARCH="aarch64_cortex-a53"
+        # 2. 设置 ImmortalWrt 版本（使用 SNAPSHOT）
+        OPENWRT_VERSION="SNAPSHOT"
+        # 3. 定义目标平台
+        TARGET="armsr/armv8"
+        # =================================
 
-          SDK_DIR="openwrt-sdk"
-          mkdir -p "$SDK_DIR"
-          cd "$SDK_DIR" || exit 1
-          
-          # 构建官方 SNAPSHOT SDK 的下载 URL
-          SDK_URL="https://downloads.immortalwrt.org/${OPENWRT_VERSION}/targets/${TARGET}/"
-          echo "正在下载 SDK 文件列表..."
-          wget -q --show-progress -O sha256sums "${SDK_URL}sha256sums"
+        SDK_DIR="openwrt-sdk"
+        mkdir -p "$SDK_DIR"
+        cd "$SDK_DIR" || exit 1
 
-          # 从列表中提取 SDK 文件名
-          SDK_FILE=$(grep -oP 'openwrt-sdk-[0-9.]+-armsr-armv8_gcc-[0-9.]+_musl.Linux-x86_64.tar.xz' sha256sums | head -1)
-          if [ -z "$SDK_FILE" ]; then
-            echo "错误：未找到 SDK 文件"
-            exit 1
-          fi
+        # 构建官方 SNAPSHOT SDK 的下载 URL
+        SDK_URL="https://downloads.immortalwrt.org/${OPENWRT_VERSION}/targets/${TARGET}/"
+        echo "正在下载 SDK 文件列表..."
+        wget -q --show-progress -O sha256sums "${SDK_URL}sha256sums"
 
-          echo "找到 SDK 文件: $SDK_FILE，开始下载..."
-          wget -q --show-progress -O sdk.tar.xz "${SDK_URL}${SDK_FILE}"
-          tar -xJf sdk.tar.xz --strip-components=1
-          rm -f sdk.tar.xz sha256sums
+        # 从列表中提取 SDK 文件名
+        SDK_FILE=$(grep -oP 'openwrt-sdk-[0-9.]+-armsr-armv8_gcc-[0-9.]+_musl.Linux-x86_64.tar.xz' sha256sums | head -1)
+        if [ -z "$SDK_FILE" ]; then
+          echo "错误：未找到 SDK 文件"
+          exit 1
+        fi
 
-          echo "SDK 下载并解压完成。开始集成插件源码..."
-          rm -rf package/luci-app-iptv-scan
-          cp -r "${GITHUB_WORKSPACE}" package/luci-app-iptv-scan
+        echo "找到 SDK 文件: $SDK_FILE，开始下载..."
+        wget -q --show-progress -O sdk.tar.xz "${SDK_URL}${SDK_FILE}"
+        tar -xJf sdk.tar.xz --strip-components=1
+        rm -f sdk.tar.xz sha256sums
 
-          echo "更新 feeds..."
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+        echo "SDK 下载并解压完成。开始集成插件源码..."
+        rm -rf package/luci-app-iptv-scan
+        cp -r "${GITHUB_WORKSPACE}" package/luci-app-iptv-scan
 
-          echo "正在配置并编译插件..."
-          echo "CONFIG_PACKAGE_luci-app-iptv-scan=m" >> .config
-          make defconfig
-          make package/luci-app-iptv-scan/compile V=s
+        echo "更新 feeds..."
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
 
-          echo "查找编译好的 APK 文件..."
-          find bin/ -name "luci-app-iptv-scan*.apk" -exec cp {} /tmp/ \;
+        echo "正在配置并编译插件..."
+        echo "CONFIG_PACKAGE_luci-app-iptv-scan=m" >> .config
+        make defconfig
+        make package/luci-app-iptv-scan/compile V=s
 
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: luci-app-iptv-scan_${{ github.run_number }}
-          path: /tmp/luci-app-iptv-scan*.apk
-          if-no-files-found: error
+        echo "查找编译好的 APK 文件..."
+        find bin/ -name "luci-app-iptv-scan*.apk" -exec cp {} /tmp/ \;
+
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: luci-app-iptv-scan_${{ github.run_number }}
+        path: /tmp/luci-app-iptv-scan*.apk
+        if-no-files-found: error
