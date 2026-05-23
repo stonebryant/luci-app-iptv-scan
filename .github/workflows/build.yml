@@ -1,81 +1,71 @@
-name: Build ImmortalWrt APK (aarch64_cortex-a53)
+name: Build OpenWrt APK Package (Stable)
 
 on:
-  push:
-    tags: [ "v*" ]          # 推送 v1.0.0 等标签时自动发布
-  workflow_dispatch:        # 允许手动触发
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write        # 用于创建 Release
-      packages: write
+
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      - name: Install Build Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential gawk git gettext \
-            libncurses5-dev libssl-dev xsltproc wget unzip python3 \
-            file rsync
+    - name: Install build dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y build-essential clang flex bison g++ gawk \
+          gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
+          python3-distutils rsync unzip zlib1g-dev file wget
 
-      - name: Download ImmortalWrt SDK (snapshot, armsr/armv8)
-        run: |
-          mkdir sdk
-          # 注意：snapshot 下的 SDK 文件名会随日期变化，使用通配符或动态获取
-          SDK_URL="https://downloads.immortalwrt.org/snapshots/targets/armsr/armv8/"
-          # 下载 sha256sums 获取最新 SDK 文件名
-          wget -qO sdk/sha256sums "$SDK_URL/sha256sums"
-          SDK_FILE=$(grep -oP 'openwrt-sdk-[0-9.]+-armsr-armv8_gcc-[0-9.]+_musl.Linux-x86_64.tar.xz' sdk/sha256sums | head -1)
-          if [ -z "$SDK_FILE" ]; then
-            echo "错误：未找到 SDK 文件"
-            exit 1
-          fi
-          wget -qO- "$SDK_URL/$SDK_FILE" | tar -xJ -C sdk --strip-components=1
-          rm sdk/sha256sums
+    - name: Build Package
+      id: compile
+      run: |
+        # 请根据你的设备情况修改此处配置
+        # --------------------------------------------------------------
+        TARGET_ARCH="aarch64_cortex-a53"       # CPU 架构
+        OPENWRT_VERSION="23.05.4"              # 稳定版本号，请确认存在
+        TARGET="armsr/armv8"                   # 目标平台
+        # --------------------------------------------------------------
 
-      - name: Copy Package Source into SDK
-        run: |
-          # 创建插件目录
-          mkdir -p sdk/package/luci-app-iptv-scan
-          # 拷贝插件所有必要文件（请根据实际仓库目录调整）
-          cp -r Makefile luasrc root po sdk/package/luci-app-iptv-scan/ 2>/dev/null || true
-          # 如果有其他文件如 src 或 patches，也一并拷贝
-          cp -r src sdk/package/luci-app-iptv-scan/ 2>/dev/null || true
-          ls -R sdk/package/luci-app-iptv-scan/
+        SDK_DIR="openwrt-sdk"
+        mkdir -p "$SDK_DIR"
+        cd "$SDK_DIR" || exit 1
 
-      - name: Update Feeds and Compile
-        run: |
-          cd sdk
-          ./scripts/feeds update -a || true
-          ./scripts/feeds install -a
-          # 直接配置并编译插件
-          echo "CONFIG_PACKAGE_luci-app-iptv-scan=m" >> .config
-          make defconfig
-          make package/luci-app-iptv-scan/compile V=s
+        SDK_URL="https://downloads.immortalwrt.org/${OPENWRT_VERSION}/targets/${TARGET}/"
+        echo "正在下载 SDK 文件列表..."
+        wget -q --show-progress -O sha256sums "${SDK_URL}sha256sums"
 
-      - name: Collect APK Artifacts
-        run: |
-          mkdir -p deploy
-          find sdk/bin -type f -name "luci-app-iptv-scan*.apk" -exec cp {} deploy/ \;
-          if [ -z "$(ls -A deploy)" ]; then
-            echo "错误：未找到编译生成的 APK 文件"
-            exit 1
-          fi
+        SDK_FILE=$(grep -oP 'openwrt-sdk-[0-9.]+-armsr-armv8_gcc-[0-9.]+_musl.Linux-x86_64.tar.xz' sha256sums | head -1)
+        if [ -z "$SDK_FILE" ]; then
+          echo "错误：未找到 SDK 文件"
+          exit 1
+        fi
 
-      - name: Upload to GitHub Actions Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: luci-app-iptv-scan-universal
-          path: deploy/*.apk
+        echo "找到 SDK 文件: $SDK_FILE，开始下载..."
+        wget -q --show-progress -O sdk.tar.xz "${SDK_URL}${SDK_FILE}"
+        tar -xJf sdk.tar.xz --strip-components=1
+        rm -f sdk.tar.xz sha256sums
 
-      - name: Release to GitHub (on tag)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: deploy/*.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        echo "SDK 下载并解压完成。开始集成插件源码..."
+        rm -rf package/luci-app-iptv-scan
+        cp -r "${GITHUB_WORKSPACE}" package/luci-app-iptv-scan
+
+        echo "更新 feeds..."
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+
+        echo "正在配置并编译插件..."
+        echo "CONFIG_PACKAGE_luci-app-iptv-scan=m" >> .config
+        make defconfig
+        make package/luci-app-iptv-scan/compile V=s
+
+        echo "查找编译好的 APK 文件..."
+        find bin/ -name "luci-app-iptv-scan*.apk" -exec cp {} /tmp/ \;
+
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: luci-app-iptv-scan_${{ github.run_number }}
+        path: /tmp/luci-app-iptv-scan*.apk
+        if-no-files-found: error
