@@ -1,4 +1,4 @@
-name: Build OpenWrt IPK (Architecture All)
+name: Build OpenWrt APK (Architecture All)
 
 on:
   push:
